@@ -1,0 +1,47 @@
+name: Makefile CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  DOCKER_REGISTRY: yniu
+  IMAGE_NAME: jenkins-tools-image
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Get current date as build id
+      id: date
+      run: echo "::set-output name=build_id::$(date '+%Y%m%d%H%M%S')"
+    - name: Declare some variables
+      id: vars
+      shell: bash
+      run: |
+        echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
+    - name: lint dockerfile
+      run: docker run --rm -i hadolint/hadolint < Dockerfile || true
+    - name: build local
+      run: docker build -t $DOCKER_REGISTRY/$IMAGE_NAME:${{ steps.vars.outputs.sha_short }}-${{steps.date.outputs.build_id }} . 
+    - name: tag image
+      shell: bash
+      run: |
+        docker tag $DOCKER_REGISTRY/$IMAGE_NAME:${{ steps.vars.outputs.sha_short }}-${{steps.date.outputs.build_id }} $DOCKER_REGISTRY/$IMAGE_NAME:${{ steps.vars.outputs.sha_short }}-${{steps.date.outputs.build_id }}
+        docker tag $DOCKER_REGISTRY/$IMAGE_NAME:${{ steps.vars.outputs.sha_short }}-${{steps.date.outputs.build_id }} $DOCKER_REGISTRY/$IMAGE_NAME:latest
+    - name: Log in to Docker Hub
+      uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
+      with:
+        username: yniu
+        password: ${{ secrets.DOCKER_TOKEN }}
+    - name: push image
+      shell: bash
+      run: |
+        docker images
+        docker push  $DOCKER_REGISTRY/$IMAGE_NAME:${{ steps.vars.outputs.sha_short }}-${{steps.date.outputs.build_id }}
+        docker push  $DOCKER_REGISTRY/$IMAGE_NAME:latest
